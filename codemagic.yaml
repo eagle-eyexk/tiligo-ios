@@ -17,7 +17,7 @@ workflows:
       branch_patterns:
         - pattern: main
     scripts:
-      - name: Bootstrap project structure
+      - name: Bootstrap
         script: |
           set -e
           [ -f package.json ] || cat > package.json << 'JSON'
@@ -32,11 +32,11 @@ workflows:
           <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>TiliGo</title></head><body style="margin:0;background:#06060A;"><iframe src="https://tili-goo.base44.app" style="width:100%;height:100vh;border:none;"></iframe></body></html>
           HTML
           fi
-      - name: Install npm dependencies
+      - name: Install dependencies
         script: npm install
       - name: Build web
         script: npm run build
-      - name: Regenerate iOS project
+      - name: Generate iOS project
         script: |
           set -e
           rm -rf ios
@@ -52,11 +52,13 @@ workflows:
           set -e
           DIR=~/Library/MobileDevice/Provisioning\ Profiles
           mkdir -p "$DIR"
+          rm -f "$DIR"/*.mobileprovision
           for f in signing/*.mobileprovision; do
-            cp "$f" "$DIR/"
             UUID=$(strings "$f" | grep -A1 UUID | grep -o '[A-F0-9]\{8\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{12\}' | head -1)
-            [ -n "$UUID" ] && cp "$f" "$DIR/$UUID.mobileprovision" && echo "Profile: $UUID"
+            cp "$f" "$DIR/$UUID.mobileprovision"
+            echo "Profile: $UUID"
           done
+          ls -la "$DIR"
           security create-keychain -p build123 build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p build123 build.keychain
@@ -72,6 +74,8 @@ workflows:
       - name: Archive
         script: |
           cd ios/App
+          UUID=$(strings ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | grep -A1 UUID | grep -o '[A-F0-9]\{8\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{12\}' | head -1)
+          echo "Profile UUID: $UUID"
           xcodebuild \
             -workspace App.xcworkspace \
             -scheme App \
@@ -79,12 +83,13 @@ workflows:
             -archivePath /Users/builder/build/TiliGo.xcarchive \
             DEVELOPMENT_TEAM=H4QUDPK7S3 \
             CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER="TiliGo Cer" \
+            PROVISIONING_PROFILE="$UUID" \
             archive
           test -d /Users/builder/build/TiliGo.xcarchive
       - name: Export IPA
         script: |
-          cat > /Users/builder/ExportOptions.plist << 'PLIST'
+          UUID=$(strings ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | grep -A1 UUID | grep -o '[A-F0-9]\{8\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{12\}' | head -1)
+          cat > /Users/builder/ExportOptions.plist << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -96,7 +101,7 @@ workflows:
               <key>provisioningProfiles</key>
               <dict>
                   <key>com.tiligo.tilgo</key>
-                  <string>TiliGo Cer</string>
+                  <string>$UUID</string>
               </dict>
           </dict>
           </plist>
