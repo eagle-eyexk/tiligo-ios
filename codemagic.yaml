@@ -34,7 +34,7 @@ workflows:
           security default-keychain -s $KEYCHAIN
           security unlock-keychain -p build123 $KEYCHAIN
           for p12 in signing/*.p12; do
-            security import "$p12" -k $KEYCHAIN -P "DqUvrZUt" -T /usr/bin/codesign
+            security import "$p12" -k $KEYCHAIN -P "TWtlyKGh" -T /usr/bin/codesign
           done
           security set-key-partition-list -S apple-tool:,apple: -s -k build123 $KEYCHAIN
       - name: Set build number
