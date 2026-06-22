@@ -1,5 +1,6 @@
 {
-  "appId": "com.tiligo.tiligo",
+  "appId": "com.tiligo.tilgo",
   "appName": "TiliGo",
-  "webDir": "https://tili-goo.base44.app/"
+  "webDir": "www",
+  "bundledWebRuntime": false
 }
