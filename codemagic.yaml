@@ -82,7 +82,7 @@ workflows:
               <key>provisioningProfiles</key>
               <dict>
                   <key>com.tiligo.tilgo</key>
-                  <string>TiliGo Cer</string>
+                  <string>TiliGo Cert</string>
               </dict>
           </dict>
           </plist>
