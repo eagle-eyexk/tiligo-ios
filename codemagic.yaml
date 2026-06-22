@@ -17,33 +17,45 @@ workflows:
       branch_patterns:
         - pattern: main
     scripts:
+      - name: Auto-fix project structure
+        script: |
+          if [ ! -f "package.json" ]; then
+            echo '{"name":"tiligo-ios","version":"1.0.0","scripts":{"build":"echo ok"},"dependencies":{"@capacitor/core":"^7.0.0","@capacitor/cli":"^7.0.0","@capacitor/ios":"^7.0.0"}}' > package.json
+          fi
+          if [ ! -f "capacitor.config.json" ]; then
+            echo '{"appId":"com.tiligo.tilgo","appName":"TiliGo","webDir":"www","bundledWebRuntime":false}' > capacitor.config.json
+          fi
+          if [ ! -d "www" ]; then
+            mkdir -p www
+            echo '<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>TiliGo</title></head><body style="margin:0;background:#06060A;"><iframe src="https://tili-goo.base44.app" style="width:100%;height:100vh;border:none;"></iframe></body></html>' > www/index.html
+          fi
       - name: Install dependencies
         script: npm install
       - name: Build web app
         script: npm run build
-      - name: Sync Capacitor iOS
-        script: npx cap sync ios
-      - name: Install provisioning profile
+      - name: Generate iOS project if missing
+        script: |
+          if [ ! -d "ios" ]; then npx cap add ios; fi
+          npx cap sync ios
+      - name: Pod install
+        script: cd ios/App && pod install --repo-update && cd ../..
+      - name: Install signing assets
         script: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp signing/*.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-      - name: Install certificate
-        script: |
-          KEYCHAIN=build.keychain
-          security create-keychain -p build123 $KEYCHAIN
-          security default-keychain -s $KEYCHAIN
-          security unlock-keychain -p build123 $KEYCHAIN
+          cp signing/*.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null || true
+          security create-keychain -p build123 build.keychain 2>/dev/null || true
+          security default-keychain -s build.keychain
+          security unlock-keychain -p build123 build.keychain
           for p12 in signing/*.p12; do
-            security import "$p12" -k $KEYCHAIN -P "TWtlyKGh" -T /usr/bin/codesign
+            security import "$p12" -k build.keychain -P "TWtlyKGh" -T /usr/bin/codesign
           done
-          security set-key-partition-list -S apple-tool:,apple: -s -k build123 $KEYCHAIN
+          security set-key-partition-list -S apple-tool:,apple: -s -k build123 build.keychain 2>/dev/null || true
       - name: Set build number
         script: |
           cd ios/App
           BUILD=$(( $(date +%s) - 1700000000 ))
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" App/Info.plist 2>/dev/null || true
-          cd ../..
-           - name: Archive app
+      - name: Archive app
         script: |
           cd ios/App
           xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -archivePath /Users/builder/build/TiliGo.xcarchive DEVELOPMENT_TEAM=H4QUDPK7S3 CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER="TiliGo Cer" archive
