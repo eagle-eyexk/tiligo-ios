@@ -11,6 +11,9 @@ workflows:
       cocoapods: default
       groups:
         - code-signing
+      vars:
+        XCODE_WORKSPACE: ios/App/App.xcworkspace
+        XCODE_SCHEME: App
     triggering:
       events:
         - push
@@ -47,25 +50,6 @@ workflows:
           pod install --repo-update
           [ -d App.xcworkspace ] || { echo "FATAL: Workspace missing"; exit 1; }
           cd ../..
-      - name: Install signing assets
-        script: |
-          set -e
-          DIR=~/Library/MobileDevice/Provisioning\ Profiles
-          mkdir -p "$DIR"
-          rm -f "$DIR"/*.mobileprovision
-          for f in signing/*.mobileprovision; do
-            UUID=$(strings "$f" | grep -A1 UUID | grep -o '[A-F0-9]\{8\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{12\}' | head -1)
-            cp "$f" "$DIR/$UUID.mobileprovision"
-            echo "Profile: $UUID"
-          done
-          ls -la "$DIR"
-          security create-keychain -p build123 build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p build123 build.keychain
-          for p12 in signing/*.p12; do
-            security import "$p12" -k build.keychain -P "TWtlyKGh" -T /usr/bin/codesign
-          done
-          security set-key-partition-list -S apple-tool:,apple: -s -k build123 build.keychain
       - name: Set build number
         script: |
           cd ios/App
@@ -74,8 +58,6 @@ workflows:
       - name: Archive
         script: |
           cd ios/App
-          UUID=$(strings ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | grep -A1 UUID | grep -o '[A-F0-9]\{8\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{12\}' | head -1)
-          echo "Profile UUID: $UUID"
           xcodebuild \
             -workspace App.xcworkspace \
             -scheme App \
@@ -83,13 +65,12 @@ workflows:
             -archivePath /Users/builder/build/TiliGo.xcarchive \
             DEVELOPMENT_TEAM=H4QUDPK7S3 \
             CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE="$UUID" \
+            PROVISIONING_PROFILE_SPECIFIER="TiliGo Cer" \
             archive
           test -d /Users/builder/build/TiliGo.xcarchive
       - name: Export IPA
         script: |
-          UUID=$(strings ~/Library/MobileDevice/Provisioning\ Profiles/*.mobileprovision | grep -A1 UUID | grep -o '[A-F0-9]\{8\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{12\}' | head -1)
-          cat > /Users/builder/ExportOptions.plist << PLIST
+          cat > /Users/builder/ExportOptions.plist << 'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
@@ -101,7 +82,7 @@ workflows:
               <key>provisioningProfiles</key>
               <dict>
                   <key>com.tiligo.tilgo</key>
-                  <string>$UUID</string>
+                  <string>TiliGo Cer</string>
               </dict>
           </dict>
           </plist>
@@ -117,3 +98,4 @@ workflows:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
+      
