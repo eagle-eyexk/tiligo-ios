@@ -34,7 +34,7 @@ workflows:
       - name: Install provisioning profile
         script: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp signing/dist.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+          cp signing/*.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
 
       - name: Install certificate
         script: |
@@ -43,7 +43,7 @@ workflows:
           security default-keychain -s $KEYCHAIN
           security unlock-keychain -p build123 $KEYCHAIN
 
-          security import signing/dist.p12 -k $KEYCHAIN -P "CERT_PASSWORD" -T /usr/bin/codesign
+          for p12 in signing/*.p12; do security import "$p12" -k $KEYCHAIN -P "CERT_PASSWORD" -T /usr/bin/codesign
 
           security set-key-partition-list -S apple-tool:,apple: -s -k build123 $KEYCHAIN
 
