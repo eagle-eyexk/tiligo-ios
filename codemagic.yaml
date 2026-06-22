@@ -3,97 +3,74 @@ workflows:
     name: TiliGo iOS TestFlight
     instance_type: mac_mini_m1
     max_build_duration: 120
-
+    integrations:
+      app_store_connect: tiligo_asc
     environment:
       node: 22
       xcode: latest
       cocoapods: default
       groups:
         - code-signing
-
     triggering:
       events:
         - push
       branch_patterns:
         - pattern: main
-
     scripts:
-
       - name: Install dependencies
-        script: |
-          npm install
-
+        script: npm install
       - name: Build web app
-        script: |
-          npm run build
-
+        script: npm run build
       - name: Sync Capacitor iOS
-        script: |
-          npx cap sync ios
-
+        script: npx cap sync ios
       - name: Install provisioning profile
         script: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp signing/*.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-
       - name: Install certificate
         script: |
           KEYCHAIN=build.keychain
           security create-keychain -p build123 $KEYCHAIN
           security default-keychain -s $KEYCHAIN
           security unlock-keychain -p build123 $KEYCHAIN
-
-          for p12 in signing/*.p12; do security import "$p12" -k $KEYCHAIN -P "CERT_PASSWORD" -T /usr/bin/codesign
-
+          for p12 in signing/*.p12; do
+            security import "$p12" -k $KEYCHAIN -P "DqUvrZUt" -T /usr/bin/codesign
+          done
           security set-key-partition-list -S apple-tool:,apple: -s -k build123 $KEYCHAIN
-
       - name: Set build number
         script: |
           cd ios/App
-          BUILD=$(( $(date +%s) / 10 ))
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" App/Info.plist || true
+          BUILD=$(( $(date +%s) - 1700000000 ))
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" App/Info.plist 2>/dev/null || true
           cd ../..
-
       - name: Archive app
         script: |
           cd ios/App
-
-          xcodebuild \
-            -workspace App.xcworkspace \
-            -scheme App \
-            -configuration Release \
-            -archivePath $CM_BUILD_DIR/build/TiliGo.xcarchive \
-            DEVELOPMENT_TEAM=YOUR_TEAM_ID \
-            CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER="TiliGo Distribution" \
-            archive
-
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -archivePath /Users/builder/build/TiliGo.xcarchive DEVELOPMENT_TEAM=H4QUDPK7S3 CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER="TiliGo Cer" archive
+          test -d /Users/builder/build/TiliGo.xcarchive || exit 1
       - name: Export IPA
         script: |
-          cat > ExportOptions.plist <<EOF2
+          cat > /Users/builder/ExportOptions.plist << 'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
               <key>method</key>
               <string>app-store</string>
-              <key>signingStyle</key>
-              <string>manual</string>
+              <key>teamID</key>
+              <string>H4QUDPK7S3</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.tiligo.tilgo</key>
+                  <string>TiliGo Cer</string>
+              </dict>
           </dict>
           </plist>
-          EOF2
-
-          xcodebuild -exportArchive \
-            -archivePath $CM_BUILD_DIR/build/TiliGo.xcarchive \
-            -exportPath $CM_BUILD_DIR/build \
-            -exportOptionsPlist ExportOptions.plist
-
+          PLIST
+          xcodebuild -exportArchive -archivePath /Users/builder/build/TiliGo.xcarchive -exportPath /Users/builder/build -exportOptionsPlist /Users/builder/ExportOptions.plist
     artifacts:
-      - $CM_BUILD_DIR/build/*.ipa
-
+      - /Users/builder/build/*.ipa
     publishing:
       app_store_connect:
-        api_key: $APP_STORE_CONNECT_API_KEY
-        issuer_id: YOUR_ISSUER_ID
-        key_id: YOUR_KEY_ID
+        auth: integration
         submit_to_testflight: true
