@@ -42,17 +42,17 @@ workflows:
           sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "Apple Distribution";/g' project.pbxproj
           cd ../../..
           cd ios/App && pod install --repo-update && cd ../..
-      - name: Install signing assets
+            - name: Install signing assets
         script: |
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp signing/*.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/ 2>/dev/null || true
-          security create-keychain -p build123 build.keychain 2>/dev/null || true
-          security default-keychain -s build.keychain
-          security unlock-keychain -p build123 build.keychain
-          for p12 in signing/*.p12; do
-            security import "$p12" -k build.keychain -P "TWtlyKGh" -T /usr/bin/codesign
+          for f in signing/*.mobileprovision; do
+            UUID=$(grep -a -A1 "UUID" "$f" | grep -o '[A-F0-9]\{8\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{4\}-[A-F0-9]\{12\}' | head -1)
+            if [ -n "$UUID" ]; then
+              cp "$f" ~/Library/MobileDevice/Provisioning\ Profiles/$UUID.mobileprovision
+              echo "Installed profile: $UUID"
+            fi
           done
-          security set-key-partition-list -S apple-tool:,apple: -s -k build123 build.keychain 2>/dev/null || true
+          ls ~/Library/MobileDevice/Provisioning\ Profiles/
       - name: Set build number
         script: |
           cd ios/App
