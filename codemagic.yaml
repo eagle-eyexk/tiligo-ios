@@ -33,11 +33,14 @@ workflows:
         script: npm install
       - name: Build web app
         script: npm run build
-      - name: Generate iOS project from scratch
+      - name: Generate iOS project and fix signing
         script: |
           rm -rf ios
           npx cap add ios
           npx cap sync ios
+          cd ios/App/App.xcodeproj
+          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "Apple Distribution";/g' project.pbxproj
+          cd ../../..
           cd ios/App && pod install --repo-update && cd ../..
       - name: Install signing assets
         script: |
