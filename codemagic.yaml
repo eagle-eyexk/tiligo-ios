@@ -1,96 +1,82 @@
 workflows:
   ios-release:
-    name: TiliGo iOS → TestFlight
+    name: TiliGo iOS → TestFlight (Stable)
     instance_type: mac_mini_m1
     max_build_duration: 120
+
     integrations:
       app_store_connect: tiligo_asc
+
     environment:
       node: 22
       xcode: latest
       cocoapods: default
-      groups:
-        - code-signing
+
     triggering:
       events:
         - push
       branch_patterns:
         - pattern: main
+
     scripts:
-      - name: Install dependencies
+
+      - name: Install dependencies & build web
         script: |
           set -e
           npm install
           npm run build
-      - name: Add & sync Capacitor iOS
+
+      - name: Sync Capacitor iOS (NO RECREATE)
         script: |
           set -e
-          rm -rf ios
-          npx cap add ios
           npx cap sync ios
-          find ios -name "project.pbxproj" -exec sed -i '' \
-            's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "Apple Distribution";/g' {} \;
-          # Inject privacy strings
-          /usr/libexec/PlistBuddy -c "Add :NSPhotoLibraryUsageDescription string 'This app needs access to your photo library to upload images.'" ios/App/App/Info.plist 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :NSLocationWhenInUseUsageDescription string 'This app needs your location to show nearby services.'" ios/App/App/Info.plist 2>/dev/null || true
-          /usr/libexec/PlistBuddy -c "Add :NSLocationAlwaysAndWhenInUseUsageDescription string 'This app needs your location for delivery tracking.'" ios/App/App/Info.plist 2>/dev/null || true
-          # Copy app icon
-          if [ -f "AppIcon-512@2x.png" ]; then
-            cp AppIcon-512@2x.png ios/App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png 2>/dev/null || true
-          fi
           cd ios/App && pod install --repo-update
-      - name: Install signing certificates
-        script: |
-          set -e
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp signing/*.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
-          security create-keychain -p build123 build.keychain 2>/dev/null || true
-          security default-keychain -s build.keychain
-          security unlock-keychain -p build123 build.keychain
-          for p12 in signing/*.p12; do
-            security import "$p12" -k build.keychain -P "TWtlyKGh" -T /usr/bin/codesign
-          done
-          security set-key-partition-list -S apple-tool:,apple: -s -k build123 build.keychain
+
       - name: Set build number
         script: |
           BUILD=$(( $(date +%s) - 1700000000 ))
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" ios/App/App/Info.plist 2>/dev/null || true
-      - name: Archive
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" ios/App/App/Info.plist
+
+      - name: Archive (Automatic Signing)
         script: |
           set -e
           xcodebuild \
             -workspace ios/App/App.xcworkspace \
             -scheme App \
             -configuration Release \
-            -archivePath /Users/builder/build/TiliGo.xcarchive \
+            -archivePath $CM_BUILD_DIR/build/TiliGo.xcarchive \
             DEVELOPMENT_TEAM=H4QUDPK7S3 \
-            CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER="TiliGo Cert" \
+            CODE_SIGN_STYLE=Automatic \
+            -allowProvisioningUpdates \
             archive
+
       - name: Export IPA
         script: |
           set -e
-          cat > /Users/builder/ExportOptions.plist << 'PLIST'
+
+          cat > ExportOptions.plist <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0"><dict>
-            <key>method</key><string>app-store</string>
-            <key>teamID</key><string>H4QUDPK7S3</string>
-            <key>provisioningProfiles</key>
-            <dict>
-              <key>com.tiligo.tilgo</key><string>TiliGo Cert</string>
-            </dict>
-          </dict></plist>
-          PLIST
+          <plist version="1.0">
+          <dict>
+            <key>method</key>
+            <string>app-store</string>
+            <key>signingStyle</key>
+            <string>automatic</string>
+          </dict>
+          </plist>
+          EOF
+
           xcodebuild -exportArchive \
-            -archivePath /Users/builder/build/TiliGo.xcarchive \
-            -exportPath /Users/builder/build \
-            -exportOptionsPlist /Users/builder/ExportOptions.plist
+            -archivePath $CM_BUILD_DIR/build/TiliGo.xcarchive \
+            -exportPath $CM_BUILD_DIR/build \
+            -exportOptionsPlist ExportOptions.plist
+
     artifacts:
-      - /Users/builder/build/*.ipa
-      - /Users/builder/build/*.dSYM.zip
+      - build/*.ipa
+      - build/*.dSYM.zip
+
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
-        expire_build_submitted_for_review: true
