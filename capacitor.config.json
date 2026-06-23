@@ -1,31 +1,6 @@
 {
   "appId": "com.tiligo.tilgo",
   "appName": "TiliGo",
-  "webDir": "www",
-  "bundledWebRuntime": false,
-  "ios": {
-    "preferredContentMode": "mobile",
-    "allowsLinkPreview": false,
-    "handleApplicationNotifications": true
-  },
-  "plugins": {
-    "PushNotifications": {
-      "presentationOptions": [
-        "badge",
-        "sound",
-        "alert"
-      ]
-    },
-    "Geolocation": {
-      "NSLocationWhenInUseUsageDescription": "TiliGo ka nevojë për vendndodhjen tënde për të gjetur restorantet pranë teje dhe për dërgesa të shpejta.",
-      "NSLocationAlwaysUsageDescription": "TiliGo përdor vendndodhjen tënde për gjurmim live të dërgesës."
-    }
-  },
-  "server": {
-    "allowNavigation": [
-      "*.base44.app",
-      "tiligo-delivery-flow.base44.app",
-      "maps.apple.com"
-    ]
-  }
+  "webDir": "dist",
+  "bundledWebRuntime": false
 }
