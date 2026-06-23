@@ -2,7 +2,7 @@
   "name": "tiligo-ios",
   "version": "1.0.0",
   "scripts": {
-    "build": "echo 'Static wrapper - no build required'"
+    "build": "echo ok"
   },
   "dependencies": {
     "@capacitor/core": "^7.0.0",
