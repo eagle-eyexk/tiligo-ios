@@ -1,8 +1,8 @@
 workflows:
   ios-release:
     name: TiliGo iOS → TestFlight
-    instance_type: mac_mini_m2
-    max_build_duration: 60
+    instance_type: mac_mini_m1
+    max_build_duration: 120
     integrations:
       app_store_connect: tiligo_asc
     environment:
@@ -10,97 +10,79 @@ workflows:
       xcode: latest
       cocoapods: default
       groups:
-        - tiligo_signing
-      vars:
-        BUNDLE_ID: com.tiligo.tilgo
-        APPLE_TEAM_ID: H4QUDPK7S3
-        PROFILE_NAME: "TiliGo Cert"
+        - code-signing
     triggering:
       events:
         - push
       branch_patterns:
         - pattern: main
-    cache:
-      cache_paths:
-        - ~/.npm
-        - ~/Library/Caches/CocoaPods
     scripts:
-      - name: Install npm dependencies
-        script: npm install
-
-      - name: Capacitor — add & sync iOS
+      - name: Install dependencies
         script: |
-          set -euo pipefail
+          set -e
+          npm install
+          npm run build
+      - name: Add & sync Capacitor iOS
+        script: |
+          set -e
           rm -rf ios
           npx cap add ios
           npx cap sync ios
-
-      - name: CocoaPods install
-        script: cd ios/App && pod install --repo-update
-
-      - name: Set build number from timestamp
+          find ios -name "project.pbxproj" -exec sed -i '' \
+            's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "Apple Distribution";/g' {} \;
+          cd ios/App && pod install --repo-update
+      - name: Install signing certificates
         script: |
-          BUILD_NO=$(date +%s)
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NO" ios/App/App/Info.plist
-
-      - name: Import signing certificate
-        script: |
-          set -euo pipefail
-          security create-keychain -p codemagic build.keychain 2>/dev/null || true
-          security default-keychain -s build.keychain
-          security unlock-keychain -p codemagic build.keychain
-          echo "$APPLE_DIST_CERT_B64" | base64 --decode > /tmp/dist.p12
-          security import /tmp/dist.p12 -k build.keychain -P "$APPLE_DIST_CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple: -s -k codemagic build.keychain
+          set -e
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "$APPLE_PROVISION_B64" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/TiliGo.mobileprovision
-
+          cp signing/*.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+          security create-keychain -p build123 build.keychain 2>/dev/null || true
+          security default-keychain -s build.keychain
+          security unlock-keychain -p build123 build.keychain
+          for p12 in signing/*.p12; do
+            security import "$p12" -k build.keychain -P "TWtlyKGh" -T /usr/bin/codesign
+          done
+          security set-key-partition-list -S apple-tool:,apple: -s -k build123 build.keychain
+      - name: Set build number
+        script: |
+          BUILD=$(( $(date +%s) - 1700000000 ))
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" ios/App/App/Info.plist 2>/dev/null || true
       - name: Archive
         script: |
-          set -euo pipefail
+          set -e
           xcodebuild \
             -workspace ios/App/App.xcworkspace \
             -scheme App \
             -configuration Release \
-            -archivePath "$CM_BUILD_DIR/TiliGo.xcarchive" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            -archivePath /Users/builder/build/TiliGo.xcarchive \
+            DEVELOPMENT_TEAM=H4QUDPK7S3 \
             CODE_SIGN_STYLE=Manual \
-            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
-            archive | xcpretty
-
+            PROVISIONING_PROFILE_SPECIFIER="TiliGo Cert" \
+            archive
       - name: Export IPA
         script: |
-          set -euo pipefail
-          cat > /tmp/ExportOptions.plist << PLIST
+          set -e
+          cat > /Users/builder/ExportOptions.plist << 'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0"><dict>
             <key>method</key><string>app-store</string>
-            <key>teamID</key><string>$APPLE_TEAM_ID</string>
+            <key>teamID</key><string>H4QUDPK7S3</string>
             <key>provisioningProfiles</key>
-            <dict><key>$BUNDLE_ID</key><string>$PROFILE_NAME</string></dict>
-            <key>compileBitcode</key><false/>
-            <key>uploadBitcode</key><false/>
+            <dict>
+              <key>com.tiligo.tilgo</key><string>TiliGo Cert</string>
+            </dict>
           </dict></plist>
           PLIST
           xcodebuild -exportArchive \
-            -archivePath "$CM_BUILD_DIR/TiliGo.xcarchive" \
-            -exportPath "$CM_BUILD_DIR/ipa" \
-            -exportOptionsPlist /tmp/ExportOptions.plist | xcpretty
-
+            -archivePath /Users/builder/build/TiliGo.xcarchive \
+            -exportPath /Users/builder/build \
+            -exportOptionsPlist /Users/builder/ExportOptions.plist
     artifacts:
-      - "$CM_BUILD_DIR/ipa/*.ipa"
-      - "$CM_BUILD_DIR/TiliGo.xcarchive"
-
+      - /Users/builder/build/*.ipa
+      - /Users/builder/build/*.dSYM.zip
     publishing:
       app_store_connect:
         auth: integration
         submit_to_testflight: true
         expire_build_submitted_for_review: true
-      email:
-        recipients:
-          - dev@tiligo.app
-        notify:
-          success: true
-          failure: true
