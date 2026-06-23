@@ -1,8 +1,9 @@
 {
   "name": "tiligo-ios",
   "version": "1.0.0",
+  "description": "TiliGo iOS App - Capacitor wrapper",
   "scripts": {
-    "build": "echo ok"
+    "build": "echo 'Static WebView - no build needed'"
   },
   "dependencies": {
     "@capacitor/core": "^7.0.0",

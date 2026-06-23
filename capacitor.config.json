@@ -2,5 +2,11 @@
   "appId": "com.tiligo.tilgo",
   "appName": "TiliGo",
   "webDir": "www",
-  "bundledWebRuntime": false
+  "bundledWebRuntime": false,
+  "server": {
+    "allowNavigation": [
+      "*.base44.app",
+      "tiligo-delivery-flow.base44.app"
+    ]
+  }
 }
