@@ -1,146 +1,75 @@
 workflows:
   ios-release:
-    name: TiliGo iOS → TestFlight (Stable Full Fix)
-
+    name: iOS Release
     instance_type: mac_mini_m1
     max_build_duration: 120
-
-    integrations:
-      app_store_connect: tiligo_asc
-
     environment:
-      node: 20
+      node: 22
       xcode: latest
       cocoapods: default
-
+      groups:
+        - code-signing
     triggering:
       events:
         - push
       branch_patterns:
         - pattern: main
-
     scripts:
-
-      # ----------------------------
-      # 1. CLEAN WEB BUILD (MANDATORY)
-      # ----------------------------
-      - name: Install & Build Web
+      - name: Install and build
         script: |
           set -e
-
           npm ci
           npm run build
-
-          echo "Validating build output"
-          test -f dist/index.html
-
-      # ----------------------------
-      # 2. FULL CAPACITOR RESET (ELIMINATES 90% OF ISSUES)
-      # ----------------------------
-      - name: Capacitor Clean Sync
+      - name: Sync and pod install
         script: |
           set -e
-
-          echo "Removing old iOS platform"
-          rm -rf ios
-
-          echo "Recreating iOS platform"
-          npx cap add ios
-
-          echo "Sync Capacitor"
+          if [ ! -d "ios" ]; then npx cap add ios; fi
           npx cap sync ios
-
-      # ----------------------------
-      # 3. POD INSTALL (iOS DEPENDENCIES)
-      # ----------------------------
-      - name: Install iOS Dependencies
+          cd ios/App && pod install --repo-update && cd ../..
+      - name: Install provisioning profile
+        script: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          cp signing/*.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+      - name: Install certificate
+        script: |
+          security create-keychain -p build123 build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p build123 build.keychain
+          for p12 in signing/*.p12; do
+            security import "$p12" -k build.keychain -P "TWtlyKGh" -T /usr/bin/codesign
+          done
+          security set-key-partition-list -S apple-tool:,apple: -s -k build123 build.keychain
+      - name: Archive and export
         script: |
           set -e
-
           cd ios/App
-          pod install --repo-update
-
-      # ----------------------------
-      # 4. VERIFY XCODE SCHEME (CRITICAL FIX FOR EXIT 65)
-      # ----------------------------
-      - name: Verify Xcode Scheme
-        script: |
-          set -e
-
-          cd ios/App
-          xcodebuild -list -workspace App.xcworkspace
-
-      # ----------------------------
-      # 5. AUTO BUILD NUMBER
-      # ----------------------------
-      - name: Set Build Number
-        script: |
-          set -e
-
           BUILD=$(( $(date +%s) - 1700000000 ))
-
-          /usr/libexec/PlistBuddy \
-            -c "Set :CFBundleVersion $BUILD" \
-            ios/App/App/Info.plist
-
-      # ----------------------------
-      # 6. ARCHIVE (FIXED EXIT 65 SAFE MODE)
-      # ----------------------------
-      - name: Archive iOS App
-        script: |
-          set -e
-
-          cd ios/App
-
-          echo "Cleaning previous build state"
-          xcodebuild clean -workspace App.xcworkspace -scheme App || true
-
-          echo "Starting archive"
-          xcodebuild \
-            -workspace App.xcworkspace \
-            -scheme App \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -archivePath $CM_BUILD_DIR/build/TiliGo.xcarchive \
-            DEVELOPMENT_TEAM=H4QUDPK7S3 \
-            CODE_SIGN_STYLE=Automatic \
-            -allowProvisioningUpdates \
-            clean archive
-
-      # ----------------------------
-      # 7. EXPORT IPA (APP STORE READY)
-      # ----------------------------
-      - name: Export IPA
-        script: |
-          set -e
-
-          cat > ExportOptions.plist <<EOF
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" App/Info.plist 2>/dev/null || true
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release -archivePath /Users/builder/build/App.xcarchive DEVELOPMENT_TEAM=H4QUDPK7S3 CODE_SIGN_STYLE=Manual PROVISIONING_PROFILE_SPECIFIER="TiliGo Cer" archive
+          test -d /Users/builder/build/App.xcarchive || exit 1
+          cat > /Users/builder/ExportOptions.plist << 'PLIST'
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
           <plist version="1.0">
           <dict>
-            <key>method</key>
-            <string>app-store</string>
-
-            <key>signingStyle</key>
-            <string>automatic</string>
-
-            <key>destination</key>
-            <string>upload</string>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>H4QUDPK7S3</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.tiligo.tilgo</key>
+                  <string>TiliGo Cer</string>
+              </dict>
           </dict>
           </plist>
-          EOF
-
-          xcodebuild -exportArchive \
-            -archivePath $CM_BUILD_DIR/build/TiliGo.xcarchive \
-            -exportPath $CM_BUILD_DIR/build \
-            -exportOptionsPlist ExportOptions.plist
-
+          PLIST
+          xcodebuild -exportArchive -archivePath /Users/builder/build/App.xcarchive -exportPath /Users/builder/build -exportOptionsPlist /Users/builder/ExportOptions.plist
     artifacts:
-      - build/*.ipa
-      - build/*.dSYM.zip
-
+      - /Users/builder/build/*.ipa
     publishing:
       app_store_connect:
-        auth: integration
+        api_key: $APP_STORE_CONNECT_API_KEY
+        issuer_id: 6d7acece-2356-43c3-9946-6fd2cda5bf7d
+        key_id: RR98G82857
         submit_to_testflight: true
